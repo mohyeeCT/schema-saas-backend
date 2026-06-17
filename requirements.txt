@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+supabase
+requests
+pydantic
+pytest
+httpx
+anthropic
+openai
+google-genai
