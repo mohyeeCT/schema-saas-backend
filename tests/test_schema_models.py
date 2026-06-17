@@ -1,7 +1,61 @@
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 
-from models import SchemaJobRequest, SchemaRow, SchemaSettings
+from models import SchemaJobRequest, SchemaRow, SchemaSettings, SchemaType
+
+
+SCHEMA_TYPES = [
+    "LocalBusiness",
+    "Restaurant",
+    "MedicalBusiness",
+    "Dentist",
+    "LegalService",
+    "HomeAndConstructionBusiness",
+    "FinancialService",
+    "Store",
+    "LodgingBusiness",
+    "AutoDealer",
+    "RealEstateAgent",
+    "BeautySalon",
+    "FitnessCenter",
+    "Organization",
+    "Corporation",
+    "EducationalOrganization",
+    "NonProfit",
+    "FAQPage",
+    "Article",
+    "BlogPosting",
+    "HowTo",
+    "Recipe",
+    "NewsArticle",
+    "Product",
+    "ItemList",
+    "Person",
+    "Event",
+    "Service",
+    "WebSite",
+    "BreadcrumbList",
+    "SoftwareApplication",
+    "VideoObject",
+]
+
+
+def test_schema_type_catalog_exactly_matches_expected_values():
+    assert set(get_args(SchemaType)) == set(SCHEMA_TYPES)
+
+
+@pytest.mark.parametrize("schema_type", SCHEMA_TYPES)
+def test_schema_settings_accepts_every_supported_schema_type(schema_type):
+    settings = SchemaSettings(schema_type=schema_type)
+
+    assert settings.schema_type == schema_type
+
+
+def test_schema_settings_rejects_unknown_schema_type():
+    with pytest.raises(ValidationError):
+        SchemaSettings(schema_type="ImaginarySchema")
 
 
 def test_schema_settings_defaults_are_safe():
