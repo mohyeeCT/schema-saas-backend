@@ -68,7 +68,7 @@ def cancel_job(job_id: str, user=Depends(get_current_user)):
     _get_schema_job(sb, user.id, job_id)
     result = (
         sb.table("jobs")
-        .update({"status": "cancelling"})
+        .update({"status": "cancelled", "current_step": "Cancelled — stopping after current row..."})
         .eq("id", job_id)
         .eq("user_id", user.id)
         .eq("tool", "schema")
