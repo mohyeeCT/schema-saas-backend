@@ -1,5 +1,5 @@
 DEFAULT_MODELS = {
-    "Claude": "claude-sonnet-4-6",
+    "Claude": "claude-sonnet-5",
     "OpenAI": "gpt-4.1",
     "Gemini (free)": "gemini-2.0-flash",
     "Mistral (free tier)": "mistral-small-latest",
