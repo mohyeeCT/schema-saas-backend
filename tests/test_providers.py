@@ -20,7 +20,7 @@ def test_unknown_provider_rejected():
         resolve_model("UnknownAI", "")
 
 
-def test_sonnet_5_schema_call_disables_thinking():
+def test_sonnet_5_schema_call_omits_thinking():
     captured = {}
 
     class FakeMessages:
@@ -46,5 +46,5 @@ def test_sonnet_5_schema_call_disables_thinking():
         else:
             sys.modules["anthropic"] = original_anthropic
 
-    assert captured["thinking"] == {"type": "disabled"}
     assert captured["max_tokens"] == 8192
+    assert "thinking" not in captured
