@@ -38,6 +38,11 @@ def _call_claude(api_key: str, prompt: str, model: str) -> str:
             "content": "Generate the requested schema JSON-LD now.",
         }],
     )
-    return "\n".join(
-        block.text for block in response.content if getattr(block, "type", "") == "text"
-    )
+    text = "\n".join(
+        str(block.text)
+        for block in (response.content or [])
+        if getattr(block, "type", "text") == "text" and getattr(block, "text", None)
+    ).strip()
+    if not text:
+        raise RuntimeError("AI provider returned an empty text response")
+    return text
