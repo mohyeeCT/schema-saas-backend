@@ -29,9 +29,11 @@ def _call_claude(api_key: str, prompt: str, model: str) -> str:
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key)
+    options = {"model": model, "max_tokens": 8192}
+    if (model or "").startswith("claude-sonnet-5"):
+        options["thinking"] = {"type": "disabled"}
     response = client.messages.create(
-        model=model,
-        max_tokens=8192,
+        **options,
         system=prompt,
         messages=[{
             "role": "user",
