@@ -50,6 +50,10 @@ class _Query:
     def execute(self):
         if self.payload is not None:
             self.sb.updates.append(self.payload)
+            self.sb.update_queries.append({
+                "payload": self.payload,
+                "filters": list(self.filters),
+            })
             self.sb.job.update(self.payload)
             return _Response([self.sb.job])
         return _Response([self.sb.job])
@@ -59,6 +63,7 @@ class _Supabase:
     def __init__(self, status="cancelled"):
         self.job = {"id": "job-1", "user_id": "user-1", "tool": "schema", "status": status}
         self.updates = []
+        self.update_queries = []
 
     def table(self, _name):
         return _Query(self)
@@ -79,3 +84,34 @@ def test_schema_worker_stops_when_job_is_already_cancelled(monkeypatch):
 
     assert calls == []
     assert sb.job["status"] == "cancelled"
+
+
+def test_schema_worker_scopes_background_updates_to_user_and_schema_tool(monkeypatch):
+    sb = _Supabase(status="running")
+    monkeypatch.setattr("routers.schema.hydrate_job_settings", lambda sb, user_id, settings: {})
+    monkeypatch.setattr(
+        "routers.schema.process_schema_row",
+        lambda row, settings, runtime: {
+            "url": str(row.url),
+            "status": "complete",
+            "schema_type": settings.schema_type,
+            "schema": {"@context": "https://schema.org", "@type": "Organization"},
+            "schema_json": "{}",
+            "schema_script": "<script>{}</script>",
+            "source_summary": {"scraped_sections": [], "serp_used": False},
+            "error": None,
+        },
+    )
+
+    schema._run_schema_job(
+        sb,
+        "user-1",
+        "job-1",
+        SchemaJobRequest(name="Schema", rows=[SchemaRow(url="https://example.com")], settings=SchemaSettings()),
+    )
+
+    assert sb.update_queries
+    for query in sb.update_queries:
+        assert ("id", "job-1") in query["filters"]
+        assert ("user_id", "user-1") in query["filters"]
+        assert ("tool", "schema") in query["filters"]

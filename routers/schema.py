@@ -110,8 +110,15 @@ def process_schema_row(
         }
 
 
-def _update_job(sb, job_id: str, data: dict[str, Any]) -> None:
-    sb.table("jobs").update(data).eq("id", job_id).execute()
+def _update_job(sb, job_id: str, user_id: str, data: dict[str, Any]) -> None:
+    (
+        sb.table("jobs")
+        .update(data)
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .eq("tool", "schema")
+        .execute()
+    )
 
 
 def _is_cancelled(sb, job_id: str, user_id: str) -> bool:
@@ -136,12 +143,12 @@ def _run_schema_job(sb, user_id: str, job_id: str, request: SchemaJobRequest) ->
     failed = 0
     for row in request.rows:
         if _is_cancelled(sb, job_id, user_id):
-            _update_job(sb, job_id, {"status": "cancelled"})
+            _update_job(sb, job_id, user_id, {"status": "cancelled"})
             return
         result = process_schema_row(row, request.settings, runtime_settings)
         results.append(result)
         failed += 1 if result["status"] == "failed" else 0
-        _update_job(sb, job_id, {
+        _update_job(sb, job_id, user_id, {
             "results": results,
             "progress": {
                 "total": len(request.rows),
@@ -150,10 +157,10 @@ def _run_schema_job(sb, user_id: str, job_id: str, request: SchemaJobRequest) ->
             },
         })
         if _is_cancelled(sb, job_id, user_id):
-            _update_job(sb, job_id, {"status": "cancelled"})
+            _update_job(sb, job_id, user_id, {"status": "cancelled"})
             return
 
-    _update_job(sb, job_id, {
+    _update_job(sb, job_id, user_id, {
         "status": "complete" if failed == 0 else "completed_with_errors",
         "results": results,
         "progress": {
