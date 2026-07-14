@@ -26,7 +26,10 @@ def build_initial_job_record(user_id: str, request: SchemaJobRequest) -> dict[st
         "rows": [row.model_dump(mode="json") for row in request.rows],
         "settings": settings,
         "results": [],
-        "progress": {"total": len(request.rows), "completed": 0, "failed": 0},
+        "total_rows": len(request.rows),
+        "completed_rows": 0,
+        "failed_rows": 0,
+        "current_step": "Starting...",
     }
 
 
@@ -143,31 +146,33 @@ def _run_schema_job(sb, user_id: str, job_id: str, request: SchemaJobRequest) ->
     failed = 0
     for row in request.rows:
         if _is_cancelled(sb, job_id, user_id):
-            _update_job(sb, job_id, user_id, {"status": "cancelled"})
+            _update_job(sb, job_id, user_id, {
+                "status": "cancelled",
+                "current_step": "Cancelled.",
+            })
             return
         result = process_schema_row(row, request.settings, runtime_settings)
         results.append(result)
         failed += 1 if result["status"] == "failed" else 0
         _update_job(sb, job_id, user_id, {
             "results": results,
-            "progress": {
-                "total": len(request.rows),
-                "completed": len(results),
-                "failed": failed,
-            },
+            "completed_rows": len(results),
+            "failed_rows": failed,
+            "current_step": f"Processed {len(results)} of {len(request.rows)} rows.",
         })
         if _is_cancelled(sb, job_id, user_id):
-            _update_job(sb, job_id, user_id, {"status": "cancelled"})
+            _update_job(sb, job_id, user_id, {
+                "status": "cancelled",
+                "current_step": "Cancelled.",
+            })
             return
 
     _update_job(sb, job_id, user_id, {
-        "status": "complete" if failed == 0 else "completed_with_errors",
+        "status": "complete",
         "results": results,
-        "progress": {
-            "total": len(request.rows),
-            "completed": len(results),
-            "failed": failed,
-        },
+        "completed_rows": len(results),
+        "failed_rows": failed,
+        "current_step": "Done." if failed == 0 else f"Done with {failed} failed row(s).",
     })
 
 

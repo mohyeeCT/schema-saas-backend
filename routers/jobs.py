@@ -22,6 +22,29 @@ def _get_schema_job(sb, user_id: str, job_id: str) -> dict:
     return result.data[0]
 
 
+def build_duplicate_job_record(user_id: str, job: dict) -> dict:
+    rows = job.get("rows") or []
+    results = job.get("results") or []
+    failed_rows = sum(
+        1
+        for result in results
+        if result.get("error") or result.get("status") in {"error", "failed"}
+    )
+    return {
+        "user_id": user_id,
+        "tool": "schema",
+        "name": f"{job.get('name') or 'Schema Generator Job'} copy",
+        "status": "complete",
+        "rows": rows,
+        "settings": job.get("settings") or {},
+        "results": results,
+        "total_rows": len(rows),
+        "completed_rows": len(results),
+        "failed_rows": failed_rows,
+        "current_step": "Duplicated.",
+    }
+
+
 @router.get("")
 def list_jobs(user=Depends(get_current_user)):
     sb = get_supabase()
@@ -82,16 +105,7 @@ def duplicate_job(job_id: str, user=Depends(get_current_user)):
     sb = get_supabase()
     job = _get_schema_job(sb, user.id, job_id)
     enforce_rate_limit(sb, user.id, "schema", "job-create", 10)
-    record = {
-        "user_id": user.id,
-        "tool": "schema",
-        "name": f"{job.get('name') or 'Schema Generator Job'} copy",
-        "status": "draft",
-        "rows": job.get("rows") or [],
-        "settings": job.get("settings") or {},
-        "results": [],
-        "progress": {"total": len(job.get("rows") or []), "completed": 0, "failed": 0},
-    }
+    record = build_duplicate_job_record(user.id, job)
     result = sb.table("jobs").insert(record).execute()
     created = (result.data or [{}])[0]
     return {"job_id": created.get("id"), **created}

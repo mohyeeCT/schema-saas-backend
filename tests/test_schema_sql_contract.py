@@ -7,6 +7,11 @@ def test_schema_sql_includes_schema_tool():
     assert "'schema'" in sql
     assert "jobs" in sql
     assert "tool" in sql
+    assert "total_rows" in sql
+    assert "completed_rows" in sql
+    assert "failed_rows" in sql
+    assert "current_step" in sql
+    assert "progress" not in sql
 
 
 def test_migration_adds_schema_tool_constraint():

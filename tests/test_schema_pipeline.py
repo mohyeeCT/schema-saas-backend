@@ -115,3 +115,36 @@ def test_schema_worker_scopes_background_updates_to_user_and_schema_tool(monkeyp
         assert ("id", "job-1") in query["filters"]
         assert ("user_id", "user-1") in query["filters"]
         assert ("tool", "schema") in query["filters"]
+        assert "progress" not in query["payload"]
+
+    final_update = sb.updates[-1]
+    assert final_update["status"] == "complete"
+    assert final_update["completed_rows"] == 1
+    assert final_update["failed_rows"] == 0
+    assert final_update["current_step"] == "Done."
+
+
+def test_schema_worker_records_failed_rows_with_supported_terminal_status(monkeypatch):
+    sb = _Supabase(status="running")
+    monkeypatch.setattr("routers.schema.hydrate_job_settings", lambda sb, user_id, settings: {})
+    monkeypatch.setattr(
+        "routers.schema.process_schema_row",
+        lambda row, settings, runtime: {
+            "url": str(row.url),
+            "status": "failed",
+            "error": "Provider unavailable",
+        },
+    )
+
+    schema._run_schema_job(
+        sb,
+        "user-1",
+        "job-1",
+        SchemaJobRequest(name="Schema", rows=[SchemaRow(url="https://example.com")], settings=SchemaSettings()),
+    )
+
+    final_update = sb.updates[-1]
+    assert final_update["status"] == "complete"
+    assert final_update["completed_rows"] == 1
+    assert final_update["failed_rows"] == 1
+    assert final_update["current_step"] == "Done with 1 failed row(s)."
