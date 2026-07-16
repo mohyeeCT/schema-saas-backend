@@ -4,6 +4,7 @@
 create table if not exists public.jobs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
+  client_profile_id uuid,
   tool text not null
     check (tool = any (array['faq','intro','meta','page-copy','all-in-one','schema'])),
   name text,

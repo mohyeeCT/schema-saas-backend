@@ -32,6 +32,7 @@ def build_duplicate_job_record(user_id: str, job: dict) -> dict:
     )
     return {
         "user_id": user_id,
+        "client_profile_id": job.get("client_profile_id"),
         "tool": "schema",
         "name": f"{job.get('name') or 'Schema Generator Job'} copy",
         "status": "complete",
@@ -46,13 +47,18 @@ def build_duplicate_job_record(user_id: str, job: dict) -> dict:
 
 
 @router.get("")
-def list_jobs(user=Depends(get_current_user)):
+def list_jobs(
+    client_profile_id: str | None = None,
+    unassigned: bool = False,
+    user=Depends(get_current_user),
+):
     sb = get_supabase()
-    result = (
-        _schema_job_query(sb, user.id)
-        .order("created_at", desc=True)
-        .execute()
-    )
+    query = _schema_job_query(sb, user.id)
+    if client_profile_id:
+        query = query.eq("client_profile_id", client_profile_id)
+    elif unassigned:
+        query = query.is_("client_profile_id", "null")
+    result = query.order("created_at", desc=True).execute()
     return result.data or []
 
 

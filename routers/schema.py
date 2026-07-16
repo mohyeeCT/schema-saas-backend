@@ -16,10 +16,15 @@ from utils.scraper import build_scrape_targets, scrape_with_firecrawl, scrape_wi
 router = APIRouter()
 
 
-def build_initial_job_record(user_id: str, request: SchemaJobRequest) -> dict[str, Any]:
+def build_initial_job_record(
+    user_id: str,
+    request: SchemaJobRequest,
+    client_profile_id: str | None = None,
+) -> dict[str, Any]:
     settings = strip_secret_fields(request.settings.model_dump())
     return {
         "user_id": user_id,
+        "client_profile_id": client_profile_id,
         "tool": "schema",
         "name": request.name,
         "status": "running",
@@ -31,6 +36,23 @@ def build_initial_job_record(user_id: str, request: SchemaJobRequest) -> dict[st
         "failed_rows": 0,
         "current_step": "Starting...",
     }
+
+
+def _resolve_client_profile_id(sb, user_id: str, profile_id: str) -> str | None:
+    if not profile_id:
+        return None
+    try:
+        result = (
+            sb.table("brand_profiles")
+            .select("id")
+            .eq("id", profile_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        return profile_id if result.data else None
+    except Exception:
+        return None
 
 
 def _scrape_source(target_url: str, settings: dict[str, Any]) -> str:
@@ -219,7 +241,12 @@ def run_schema_job(
                 status_code=400,
                 detail="Add a Firecrawl API key in Settings before using Firecrawl as the primary scraper.",
             )
-    record = build_initial_job_record(user.id, request)
+    client_profile_id = _resolve_client_profile_id(
+        sb,
+        user.id,
+        request.settings.brand_profile_id,
+    )
+    record = build_initial_job_record(user.id, request, client_profile_id)
     created = sb.table("jobs").insert(record).execute()
     job_id = created.data[0]["id"]
     background_tasks.add_task(_run_schema_job, sb, user.id, job_id, request)
