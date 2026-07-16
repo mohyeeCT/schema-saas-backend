@@ -50,6 +50,8 @@ class SchemaSettings(BaseModel):
     scrape_target: bool = True
     scrape_homepage: bool = True
     deep_scrape: bool = False
+    scrape_provider: Literal["jina", "firecrawl"] = "jina"
+    firecrawl_fallback: bool = False
     serp_check: bool = False
     dfs_login: str = ""
     include_script_tag: bool = True

@@ -64,6 +64,8 @@ def test_schema_settings_defaults_are_safe():
     assert settings.provider == "Claude"
     assert settings.schema_type == "LocalBusiness"
     assert settings.scrape_target is True
+    assert settings.scrape_provider == "jina"
+    assert settings.firecrawl_fallback is False
     assert settings.deep_scrape is False
     assert settings.serp_check is False
 

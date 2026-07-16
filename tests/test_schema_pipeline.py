@@ -1,3 +1,8 @@
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
 from models import SchemaRow, SchemaSettings
 from models import SchemaJobRequest
 from routers import schema
@@ -67,6 +72,88 @@ class _Supabase:
 
     def table(self, _name):
         return _Query(self)
+
+
+class _InsertQuery:
+    def __init__(self, sb):
+        self.sb = sb
+        self.payload = None
+
+    def insert(self, payload):
+        self.payload = payload
+        return self
+
+    def execute(self):
+        self.sb.inserted.append(self.payload)
+        return _Response([{"id": "job-new", **self.payload}])
+
+
+class _InsertSupabase:
+    def __init__(self):
+        self.inserted = []
+
+    def table(self, _name):
+        return _InsertQuery(self)
+
+
+class _BackgroundTasks:
+    def __init__(self):
+        self.calls = []
+
+    def add_task(self, function, *args, **kwargs):
+        self.calls.append((function, args, kwargs))
+
+
+def test_jina_schema_job_does_not_add_a_synchronous_credential_dependency(monkeypatch):
+    sb = _InsertSupabase()
+    background = _BackgroundTasks()
+    monkeypatch.setattr(schema, "get_supabase", lambda: sb)
+    monkeypatch.setattr(schema, "enforce_job_start", lambda *_args: None)
+    monkeypatch.setattr(schema, "enforce_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(
+        schema,
+        "hydrate_job_settings",
+        lambda *_args: pytest.fail("Jina job should hydrate only in the background worker"),
+    )
+
+    result = schema.run_schema_job(
+        SchemaJobRequest(
+            name="Schema",
+            rows=[SchemaRow(url="https://example.com")],
+            settings=SchemaSettings(scrape_provider="jina"),
+        ),
+        background,
+        user=SimpleNamespace(id="user-1"),
+    )
+
+    assert result == {"job_id": "job-new"}
+    assert len(sb.inserted) == 1
+    assert len(background.calls) == 1
+
+
+def test_firecrawl_primary_requires_a_server_side_key_before_queueing(monkeypatch):
+    sb = _InsertSupabase()
+    background = _BackgroundTasks()
+    monkeypatch.setattr(schema, "get_supabase", lambda: sb)
+    monkeypatch.setattr(schema, "enforce_job_start", lambda *_args: None)
+    monkeypatch.setattr(schema, "enforce_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(schema, "hydrate_job_settings", lambda *_args: {})
+
+    with pytest.raises(HTTPException) as raised:
+        schema.run_schema_job(
+            SchemaJobRequest(
+                name="Schema",
+                rows=[SchemaRow(url="https://example.com")],
+                settings=SchemaSettings(scrape_provider="firecrawl"),
+            ),
+            background,
+            user=SimpleNamespace(id="user-1"),
+        )
+
+    assert raised.value.status_code == 400
+    assert "Firecrawl API key" in raised.value.detail
+    assert sb.inserted == []
+    assert background.calls == []
 
 
 def test_schema_worker_stops_when_job_is_already_cancelled(monkeypatch):

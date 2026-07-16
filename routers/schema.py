@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from abuse_protection import enforce_job_start, enforce_rate_limit
 from auth import get_current_user, get_supabase
@@ -11,7 +11,7 @@ from utils.dfs import get_serp_data
 from utils.providers import generate_schema_text
 from utils.schema_parse import extract_schema_json, wrap_json_ld
 from utils.schema_prompt import build_schema_prompt
-from utils.scraper import build_scrape_targets, scrape_with_jina
+from utils.scraper import build_scrape_targets, scrape_with_firecrawl, scrape_with_jina
 
 router = APIRouter()
 
@@ -33,17 +33,30 @@ def build_initial_job_record(user_id: str, request: SchemaJobRequest) -> dict[st
     }
 
 
-def scrape_sources(row: SchemaRow, settings: SchemaSettings) -> dict[str, str]:
+def _scrape_source(target_url: str, settings: dict[str, Any]) -> str:
+    firecrawl_key = settings.get("firecrawl_api_key", "")
+    if settings.get("scrape_provider", "jina") == "firecrawl":
+        return scrape_with_firecrawl(target_url, firecrawl_key)
+    try:
+        return scrape_with_jina(target_url, api_key=settings.get("jina_api_key", ""))
+    except Exception:
+        if settings.get("firecrawl_fallback") and firecrawl_key:
+            return scrape_with_firecrawl(target_url, firecrawl_key)
+        raise
+
+
+def scrape_sources(row: SchemaRow, settings: dict[str, Any] | SchemaSettings) -> dict[str, str]:
+    values = settings if isinstance(settings, dict) else settings.model_dump()
     targets = build_scrape_targets(
         str(row.url),
-        scrape_target=settings.scrape_target,
-        scrape_homepage=settings.scrape_homepage,
-        deep_scrape=settings.deep_scrape,
+        scrape_target=bool(values.get("scrape_target")),
+        scrape_homepage=bool(values.get("scrape_homepage")),
+        deep_scrape=bool(values.get("deep_scrape")),
     )
     sources: dict[str, str] = {}
     for key, target_url in targets:
         try:
-            sources[key] = scrape_with_jina(target_url)
+            sources[key] = _scrape_source(target_url, values)
         except Exception:
             continue
     return sources
@@ -70,8 +83,8 @@ def process_schema_row(
     runtime_settings: dict[str, Any],
 ) -> dict[str, Any]:
     try:
-        scraped_content = scrape_sources(row, settings)
         merged_settings = {**settings.model_dump(), **runtime_settings}
+        scraped_content = scrape_sources(row, merged_settings)
         serp_data = fetch_optional_serp(row, merged_settings)
         prompt = build_schema_prompt(
             url=str(row.url),
@@ -185,6 +198,27 @@ def run_schema_job(
     sb = get_supabase()
     enforce_job_start(sb, user.id, "schema", len(request.rows), 25)
     enforce_rate_limit(sb, user.id, "schema", "job-create", 10)
+    scraping_enabled = (
+        request.settings.scrape_target
+        or request.settings.scrape_homepage
+        or request.settings.deep_scrape
+    )
+    if (
+        scraping_enabled
+        and request.settings.scrape_provider == "firecrawl"
+    ):
+        try:
+            runtime_settings = hydrate_job_settings(sb, user.id, request.settings.model_dump())
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Saved credentials are temporarily unavailable. Please try again.",
+            ) from None
+        if not runtime_settings.get("firecrawl_api_key"):
+            raise HTTPException(
+                status_code=400,
+                detail="Add a Firecrawl API key in Settings before using Firecrawl as the primary scraper.",
+            )
     record = build_initial_job_record(user.id, request)
     created = sb.table("jobs").insert(record).execute()
     job_id = created.data[0]["id"]
